@@ -11,7 +11,9 @@
 import {
   SSH_CONNECT,
   SSH_DISCONNECT,
+  SSH_GET_CONFIG_HOSTS,
   SSH_GET_STATE,
+  SSH_RESOLVE_HOST,
   SSH_TEST,
 } from '@preload/constants/ipcChannels';
 import { createLogger } from '@shared/utils/logger';
@@ -96,6 +98,28 @@ export function registerSshHandlers(ipcMain: IpcMain): void {
     }
   });
 
+  ipcMain.handle(SSH_GET_CONFIG_HOSTS, async () => {
+    try {
+      const hosts = await connectionManager.getConfigHosts();
+      return { success: true, data: hosts };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error('Failed to get SSH config hosts:', message);
+      return { success: true, data: [] };
+    }
+  });
+
+  ipcMain.handle(SSH_RESOLVE_HOST, async (_event, alias: string) => {
+    try {
+      const entry = await connectionManager.resolveHostConfig(alias);
+      return { success: true, data: entry };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error(`Failed to resolve SSH host "${alias}":`, message);
+      return { success: true, data: null };
+    }
+  });
+
   logger.info('SSH handlers registered');
 }
 
@@ -104,4 +128,6 @@ export function removeSshHandlers(ipcMain: IpcMain): void {
   ipcMain.removeHandler(SSH_DISCONNECT);
   ipcMain.removeHandler(SSH_GET_STATE);
   ipcMain.removeHandler(SSH_TEST);
+  ipcMain.removeHandler(SSH_GET_CONFIG_HOSTS);
+  ipcMain.removeHandler(SSH_RESOLVE_HOST);
 }

@@ -75,6 +75,12 @@ export const SSH_GET_STATE = 'ssh:getState';
 /** Test SSH connection without switching */
 export const SSH_TEST = 'ssh:test';
 
+/** Get SSH config hosts from ~/.ssh/config */
+export const SSH_GET_CONFIG_HOSTS = 'ssh:getConfigHosts';
+
+/** Resolve a single SSH config host alias */
+export const SSH_RESOLVE_HOST = 'ssh:resolveHost';
+
 /** SSH status event channel (main -> renderer) */
 export const SSH_STATUS = 'ssh:status';
 

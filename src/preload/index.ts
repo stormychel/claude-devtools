@@ -4,7 +4,9 @@ import { contextBridge, ipcRenderer } from 'electron';
 import {
   SSH_CONNECT,
   SSH_DISCONNECT,
+  SSH_GET_CONFIG_HOSTS,
   SSH_GET_STATE,
+  SSH_RESOLVE_HOST,
   SSH_STATUS,
   SSH_TEST,
   UPDATER_CHECK,
@@ -37,6 +39,7 @@ import type {
   ElectronAPI,
   NotificationTrigger,
   SessionsPaginationOptions,
+  SshConfigHostEntry,
   SshConnectionConfig,
   SshConnectionStatus,
   TriggerTestResult,
@@ -331,6 +334,12 @@ const electronAPI: ElectronAPI = {
     },
     test: async (config: SshConnectionConfig): Promise<{ success: boolean; error?: string }> => {
       return invokeIpcWithResult<{ success: boolean; error?: string }>(SSH_TEST, config);
+    },
+    getConfigHosts: async (): Promise<SshConfigHostEntry[]> => {
+      return invokeIpcWithResult<SshConfigHostEntry[]>(SSH_GET_CONFIG_HOSTS);
+    },
+    resolveHost: async (alias: string): Promise<SshConfigHostEntry | null> => {
+      return invokeIpcWithResult<SshConfigHostEntry | null>(SSH_RESOLVE_HOST, alias);
     },
     onStatus: (callback: (event: unknown, status: SshConnectionStatus) => void): (() => void) => {
       ipcRenderer.on(

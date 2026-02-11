@@ -6,7 +6,7 @@
  */
 
 import type { AppState } from '../types';
-import type { SshConnectionConfig, SshConnectionState } from '@shared/types';
+import type { SshConfigHostEntry, SshConnectionConfig, SshConnectionState } from '@shared/types';
 import type { StateCreator } from 'zustand';
 
 // =============================================================================
@@ -19,6 +19,7 @@ export interface ConnectionSlice {
   connectionState: SshConnectionState;
   connectedHost: string | null;
   connectionError: string | null;
+  sshConfigHosts: SshConfigHostEntry[];
 
   // Actions
   connectSsh: (config: SshConnectionConfig) => Promise<void>;
@@ -29,6 +30,8 @@ export interface ConnectionSlice {
     host: string | null,
     error: string | null
   ) => void;
+  fetchSshConfigHosts: () => Promise<void>;
+  resolveConfigHost: (alias: string) => Promise<SshConfigHostEntry | null>;
 }
 
 // =============================================================================
@@ -44,6 +47,7 @@ export const createConnectionSlice: StateCreator<AppState, [], [], ConnectionSli
   connectionState: 'disconnected',
   connectedHost: null,
   connectionError: null,
+  sshConfigHosts: [],
 
   // Actions
   connectSsh: async (config: SshConnectionConfig): Promise<void> => {
@@ -117,5 +121,23 @@ export const createConnectionSlice: StateCreator<AppState, [], [], ConnectionSli
       connectedHost: host,
       connectionError: error,
     });
+  },
+
+  fetchSshConfigHosts: async (): Promise<void> => {
+    try {
+      const hosts = await window.electronAPI.ssh.getConfigHosts();
+      set({ sshConfigHosts: hosts });
+    } catch {
+      // Gracefully ignore - SSH config may not exist
+      set({ sshConfigHosts: [] });
+    }
+  },
+
+  resolveConfigHost: async (alias: string): Promise<SshConfigHostEntry | null> => {
+    try {
+      return await window.electronAPI.ssh.resolveHost(alias);
+    } catch {
+      return null;
+    }
   },
 });

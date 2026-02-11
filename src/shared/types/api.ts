@@ -156,7 +156,18 @@ export type SshConnectionState = 'disconnected' | 'connecting' | 'connected' | '
 /**
  * SSH authentication method.
  */
-export type SshAuthMethod = 'password' | 'privateKey' | 'agent';
+export type SshAuthMethod = 'password' | 'privateKey' | 'agent' | 'auto';
+
+/**
+ * SSH config host entry resolved from ~/.ssh/config.
+ */
+export interface SshConfigHostEntry {
+  alias: string;
+  hostName?: string;
+  user?: string;
+  port?: number;
+  hasIdentityFile: boolean;
+}
 
 /**
  * SSH connection configuration sent from renderer.
@@ -201,6 +212,8 @@ export interface SshAPI {
   disconnect: () => Promise<SshConnectionStatus>;
   getState: () => Promise<SshConnectionStatus>;
   test: (config: SshConnectionConfig) => Promise<{ success: boolean; error?: string }>;
+  getConfigHosts: () => Promise<SshConfigHostEntry[]>;
+  resolveHost: (alias: string) => Promise<SshConfigHostEntry | null>;
   onStatus: (callback: (event: unknown, status: SshConnectionStatus) => void) => () => void;
 }
 

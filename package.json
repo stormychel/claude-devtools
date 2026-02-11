@@ -52,6 +52,7 @@
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
     "remark-parse": "^11.0.0",
+    "ssh-config": "^5.0.4",
     "ssh2": "^1.17.0",
     "unified": "^11.0.5",
     "zustand": "^4.5.0"

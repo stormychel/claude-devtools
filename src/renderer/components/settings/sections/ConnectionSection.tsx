@@ -4,10 +4,11 @@
  * Provides UI for:
  * - Toggling between local and SSH modes
  * - Configuring SSH connection (host, port, username, auth)
+ * - SSH config host alias combobox with auto-fill
  * - Testing and connecting to remote hosts
  */
 
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { useStore } from '@renderer/store';
 import { Loader2, Monitor, Wifi, WifiOff } from 'lucide-react';
@@ -15,7 +16,7 @@ import { Loader2, Monitor, Wifi, WifiOff } from 'lucide-react';
 import { SettingRow } from '../components/SettingRow';
 import { SettingsSectionHeader } from '../components/SettingsSectionHeader';
 
-import type { SshAuthMethod, SshConnectionConfig } from '@shared/types';
+import type { SshAuthMethod, SshConfigHostEntry, SshConnectionConfig } from '@shared/types';
 
 export const ConnectionSection = (): React.JSX.Element => {
   const connectionState = useStore((s) => s.connectionState);
@@ -24,16 +25,63 @@ export const ConnectionSection = (): React.JSX.Element => {
   const connectSsh = useStore((s) => s.connectSsh);
   const disconnectSsh = useStore((s) => s.disconnectSsh);
   const testConnection = useStore((s) => s.testConnection);
+  const sshConfigHosts = useStore((s) => s.sshConfigHosts);
+  const fetchSshConfigHosts = useStore((s) => s.fetchSshConfigHosts);
 
   // Form state
   const [host, setHost] = useState('');
   const [port, setPort] = useState('22');
   const [username, setUsername] = useState('');
-  const [authMethod, setAuthMethod] = useState<SshAuthMethod>('agent');
+  const [authMethod, setAuthMethod] = useState<SshAuthMethod>('auto');
   const [password, setPassword] = useState('');
   const [privateKeyPath, setPrivateKeyPath] = useState('~/.ssh/id_rsa');
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; error?: string } | null>(null);
+
+  // Combobox state
+  const [showDropdown, setShowDropdown] = useState(false);
+  const hostInputRef = useRef<HTMLInputElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Fetch SSH config hosts on mount
+  useEffect(() => {
+    void fetchSshConfigHosts();
+  }, [fetchSshConfigHosts]);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent): void => {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(e.target as Node) &&
+        hostInputRef.current &&
+        !hostInputRef.current.contains(e.target as Node)
+      ) {
+        setShowDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Filter config hosts based on input
+  const filteredHosts = useMemo(() => {
+    if (!host.trim()) return sshConfigHosts;
+    const lower = host.toLowerCase();
+    return sshConfigHosts.filter(
+      (entry) =>
+        entry.alias.toLowerCase().includes(lower) || entry.hostName?.toLowerCase().includes(lower)
+    );
+  }, [host, sshConfigHosts]);
+
+  const handleSelectConfigHost = (entry: SshConfigHostEntry): void => {
+    setHost(entry.alias);
+    if (entry.port) setPort(String(entry.port));
+    if (entry.user) setUsername(entry.user);
+    setAuthMethod('auto');
+    setShowDropdown(false);
+    setTestResult(null);
+  };
 
   const buildConfig = (): SshConnectionConfig => ({
     host,
@@ -64,6 +112,11 @@ export const ConnectionSection = (): React.JSX.Element => {
   const isConnected = connectionState === 'connected';
 
   const inputClass = 'w-full rounded-md border px-3 py-1.5 text-sm focus:outline-none focus:ring-1';
+  const inputStyle = {
+    backgroundColor: 'var(--color-surface-raised)',
+    borderColor: 'var(--color-border)',
+    color: 'var(--color-text)',
+  };
 
   return (
     <div className="space-y-6">
@@ -130,22 +183,60 @@ export const ConnectionSection = (): React.JSX.Element => {
           </h3>
 
           <div className="grid grid-cols-2 gap-3">
-            <div>
+            {/* Host input with combobox */}
+            <div className="relative">
               <label className="mb-1 block text-xs" style={{ color: 'var(--color-text-muted)' }}>
                 Host
               </label>
               <input
+                ref={hostInputRef}
                 type="text"
                 value={host}
-                onChange={(e) => setHost(e.target.value)}
-                placeholder="192.168.1.100"
-                className={inputClass}
-                style={{
-                  backgroundColor: 'var(--color-surface-raised)',
-                  borderColor: 'var(--color-border)',
-                  color: 'var(--color-text)',
+                onChange={(e) => {
+                  setHost(e.target.value);
+                  setShowDropdown(true);
+                  setTestResult(null);
                 }}
+                onFocus={() => setShowDropdown(true)}
+                placeholder="hostname or ssh config alias"
+                className={inputClass}
+                style={inputStyle}
               />
+              {showDropdown && filteredHosts.length > 0 && (
+                <div
+                  ref={dropdownRef}
+                  className="absolute z-50 mt-1 max-h-48 w-full overflow-y-auto rounded-md border shadow-lg"
+                  style={{
+                    backgroundColor: 'var(--color-surface-overlay)',
+                    borderColor: 'var(--color-border-emphasis)',
+                  }}
+                >
+                  {filteredHosts.map((entry) => (
+                    <button
+                      key={entry.alias}
+                      type="button"
+                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-surface-raised"
+                      style={{
+                        color: 'var(--color-text)',
+                      }}
+                      onClick={() => handleSelectConfigHost(entry)}
+                    >
+                      <span className="font-medium">{entry.alias}</span>
+                      {entry.hostName && (
+                        <span style={{ color: 'var(--color-text-muted)' }}>{entry.hostName}</span>
+                      )}
+                      {entry.user && (
+                        <span
+                          className="ml-auto text-xs"
+                          style={{ color: 'var(--color-text-muted)' }}
+                        >
+                          {entry.user}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             <div>
               <label className="mb-1 block text-xs" style={{ color: 'var(--color-text-muted)' }}>
@@ -157,11 +248,7 @@ export const ConnectionSection = (): React.JSX.Element => {
                 onChange={(e) => setPort(e.target.value)}
                 placeholder="22"
                 className={inputClass}
-                style={{
-                  backgroundColor: 'var(--color-surface-raised)',
-                  borderColor: 'var(--color-border)',
-                  color: 'var(--color-text)',
-                }}
+                style={inputStyle}
               />
             </div>
           </div>
@@ -176,11 +263,7 @@ export const ConnectionSection = (): React.JSX.Element => {
               onChange={(e) => setUsername(e.target.value)}
               placeholder="user"
               className={inputClass}
-              style={{
-                backgroundColor: 'var(--color-surface-raised)',
-                borderColor: 'var(--color-border)',
-                color: 'var(--color-text)',
-              }}
+              style={inputStyle}
             />
           </div>
 
@@ -192,12 +275,9 @@ export const ConnectionSection = (): React.JSX.Element => {
               value={authMethod}
               onChange={(e) => setAuthMethod(e.target.value as SshAuthMethod)}
               className="w-full rounded-md border px-3 py-1.5 text-sm"
-              style={{
-                backgroundColor: 'var(--color-surface-raised)',
-                borderColor: 'var(--color-border)',
-                color: 'var(--color-text)',
-              }}
+              style={inputStyle}
             >
+              <option value="auto">Auto (from SSH Config)</option>
               <option value="agent">SSH Agent</option>
               <option value="privateKey">Private Key</option>
               <option value="password">Password</option>
@@ -215,11 +295,7 @@ export const ConnectionSection = (): React.JSX.Element => {
                 onChange={(e) => setPrivateKeyPath(e.target.value)}
                 placeholder="~/.ssh/id_rsa"
                 className={inputClass}
-                style={{
-                  backgroundColor: 'var(--color-surface-raised)',
-                  borderColor: 'var(--color-border)',
-                  color: 'var(--color-text)',
-                }}
+                style={inputStyle}
               />
             </div>
           )}
@@ -234,11 +310,7 @@ export const ConnectionSection = (): React.JSX.Element => {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className={inputClass}
-                style={{
-                  backgroundColor: 'var(--color-surface-raised)',
-                  borderColor: 'var(--color-border)',
-                  color: 'var(--color-text)',
-                }}
+                style={inputStyle}
               />
             </div>
           )}
@@ -254,7 +326,7 @@ export const ConnectionSection = (): React.JSX.Element => {
             >
               {testResult.success
                 ? 'Connection successful'
-                : `Connection failed: ${testResult.error}`}
+                : `Connection failed: ${testResult.error ?? 'Unknown error'}`}
             </div>
           )}
 
@@ -262,7 +334,7 @@ export const ConnectionSection = (): React.JSX.Element => {
           <div className="flex items-center gap-3">
             <button
               onClick={() => void handleTest()}
-              disabled={!host || !username || testing || isConnecting}
+              disabled={!host || testing || isConnecting}
               className="rounded-md px-4 py-1.5 text-sm transition-colors disabled:opacity-50"
               style={{
                 backgroundColor: 'var(--color-surface-raised)',
@@ -281,7 +353,7 @@ export const ConnectionSection = (): React.JSX.Element => {
 
             <button
               onClick={() => void handleConnect()}
-              disabled={!host || !username || isConnecting}
+              disabled={!host || isConnecting}
               className="rounded-md px-4 py-1.5 text-sm transition-colors disabled:opacity-50"
               style={{
                 backgroundColor: 'var(--color-surface-raised)',

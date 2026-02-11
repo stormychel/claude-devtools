@@ -19,6 +19,7 @@ export type * from './FileSystemProvider';
 export * from './FileWatcher';
 export * from './LocalFileSystemProvider';
 export * from './NotificationManager';
+export * from './SshConfigParser';
 export * from './SshConnectionManager';
 export * from './SshFileSystemProvider';
 export * from './TriggerManager';

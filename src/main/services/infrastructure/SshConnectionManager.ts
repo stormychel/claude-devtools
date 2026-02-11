@@ -10,15 +10,19 @@
  */
 
 import { createLogger } from '@shared/utils/logger';
+import { execFile } from 'child_process';
 import { EventEmitter } from 'events';
+import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { Client, type ConnectConfig } from 'ssh2';
 
 import { LocalFileSystemProvider } from './LocalFileSystemProvider';
+import { SshConfigParser } from './SshConfigParser';
 import { SshFileSystemProvider } from './SshFileSystemProvider';
 
 import type { FileSystemProvider } from './FileSystemProvider';
+import type { SshConfigHostEntry } from '@shared/types';
 
 const logger = createLogger('Infrastructure:SshConnectionManager');
 
@@ -28,7 +32,7 @@ const logger = createLogger('Infrastructure:SshConnectionManager');
 
 export type SshConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error';
 
-export type SshAuthMethod = 'password' | 'privateKey' | 'agent';
+export type SshAuthMethod = 'password' | 'privateKey' | 'agent' | 'auto';
 
 export interface SshConnectionConfig {
   host: string;
@@ -64,6 +68,7 @@ export class SshConnectionManager extends EventEmitter {
   private client: Client | null = null;
   private provider: FileSystemProvider;
   private localProvider: LocalFileSystemProvider;
+  private configParser: SshConfigParser;
   private state: SshConnectionState = 'disconnected';
   private connectedHost: string | null = null;
   private lastError: string | null = null;
@@ -73,6 +78,7 @@ export class SshConnectionManager extends EventEmitter {
     super();
     this.localProvider = new LocalFileSystemProvider();
     this.provider = this.localProvider;
+    this.configParser = new SshConfigParser();
   }
 
   /**
@@ -107,6 +113,20 @@ export class SshConnectionManager extends EventEmitter {
    */
   isRemote(): boolean {
     return this.state === 'connected' && this.provider.type === 'ssh';
+  }
+
+  /**
+   * Returns all SSH config host entries from ~/.ssh/config.
+   */
+  async getConfigHosts(): Promise<SshConfigHostEntry[]> {
+    return this.configParser.getHosts();
+  }
+
+  /**
+   * Resolves a host alias from ~/.ssh/config.
+   */
+  async resolveHostConfig(alias: string): Promise<SshConfigHostEntry | null> {
+    return this.configParser.resolveHost(alias);
   }
 
   /**
@@ -244,10 +264,13 @@ export class SshConnectionManager extends EventEmitter {
   // ===========================================================================
 
   private async buildConnectConfig(config: SshConnectionConfig): Promise<ConnectConfig> {
+    // Resolve SSH config for the given host (alias or hostname)
+    const sshConfig = await this.configParser.resolveHost(config.host);
+
     const connectConfig: ConnectConfig = {
-      host: config.host,
-      port: config.port,
-      username: config.username,
+      host: sshConfig?.hostName ?? config.host,
+      port: config.port !== 22 ? config.port : (sshConfig?.port ?? config.port),
+      username: config.username || sshConfig?.user || os.userInfo().username,
       readyTimeout: 10000,
     };
 
@@ -258,9 +281,8 @@ export class SshConnectionManager extends EventEmitter {
 
       case 'privateKey': {
         const keyPath = config.privateKeyPath ?? path.join(os.homedir(), '.ssh', 'id_rsa');
-        const { promises: fsPromises } = await import('fs');
         try {
-          const keyData = await fsPromises.readFile(keyPath, 'utf8');
+          const keyData = await fs.promises.readFile(keyPath, 'utf8');
           connectConfig.privateKey = keyData;
         } catch (err) {
           throw new Error(`Cannot read private key at ${keyPath}: ${(err as Error).message}`);
@@ -268,15 +290,161 @@ export class SshConnectionManager extends EventEmitter {
         break;
       }
 
-      case 'agent':
-        connectConfig.agent = process.env.SSH_AUTH_SOCK;
-        if (!connectConfig.agent) {
-          throw new Error('SSH_AUTH_SOCK environment variable is not set');
+      case 'agent': {
+        const agentSocket = await this.discoverAgentSocket();
+        if (!agentSocket) {
+          throw new Error(
+            'SSH agent socket not found. Ensure ssh-agent is running or SSH_AUTH_SOCK is set.'
+          );
+        }
+        connectConfig.agent = agentSocket;
+        break;
+      }
+
+      case 'auto': {
+        // Auto: try identity file from config -> agent -> default keys
+        const resolved = await this.resolveAutoAuth(sshConfig);
+        if (resolved.privateKey) {
+          connectConfig.privateKey = resolved.privateKey;
+        } else if (resolved.agent) {
+          connectConfig.agent = resolved.agent;
         }
         break;
+      }
     }
 
     return connectConfig;
+  }
+
+  /**
+   * Discovers the SSH agent socket path.
+   * Handles macOS GUI apps not inheriting SSH_AUTH_SOCK from shell.
+   */
+  private async discoverAgentSocket(): Promise<string | null> {
+    // 1. Check SSH_AUTH_SOCK env var
+    if (process.env.SSH_AUTH_SOCK) {
+      try {
+        await fs.promises.access(process.env.SSH_AUTH_SOCK);
+        return process.env.SSH_AUTH_SOCK;
+      } catch {
+        // Socket path set but not accessible
+      }
+    }
+
+    // 2. macOS: ask launchctl for the socket (GUI apps don't inherit shell env)
+    if (process.platform === 'darwin') {
+      try {
+        const sock = await new Promise<string | null>((resolve) => {
+          execFile('/bin/launchctl', ['getenv', 'SSH_AUTH_SOCK'], (err, stdout) => {
+            if (err || !stdout.trim()) {
+              resolve(null);
+              return;
+            }
+            resolve(stdout.trim());
+          });
+        });
+        if (sock) {
+          try {
+            await fs.promises.access(sock);
+            return sock;
+          } catch {
+            // Not accessible
+          }
+        }
+      } catch {
+        // launchctl not available
+      }
+    }
+
+    // 3. Try known socket paths
+    const knownPaths = [
+      // 1Password SSH agent
+      path.join(
+        os.homedir(),
+        'Library',
+        'Group Containers',
+        '2BUA8C4S2C.com.1password',
+        'agent.sock'
+      ),
+      path.join(os.homedir(), '.1password', 'agent.sock'),
+      // Common user agent socket
+      path.join(os.homedir(), '.ssh', 'agent.sock'),
+    ];
+
+    // Linux: add system paths
+    if (process.platform === 'linux') {
+      const uid = process.getuid?.();
+      if (uid !== undefined) {
+        knownPaths.push(`/run/user/${uid}/ssh-agent.socket`);
+        knownPaths.push(`/run/user/${uid}/keyring/ssh`);
+      }
+    }
+
+    for (const socketPath of knownPaths) {
+      try {
+        await fs.promises.access(socketPath);
+        return socketPath;
+      } catch {
+        // Not accessible
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Resolves authentication automatically by trying:
+   * 1. IdentityFile from SSH config
+   * 2. SSH agent
+   * 3. Default key files (id_ed25519, id_rsa)
+   */
+  private async resolveAutoAuth(
+    sshConfig: SshConfigHostEntry | null
+  ): Promise<{ privateKey?: string; agent?: string }> {
+    // Try SSH config identity file
+    if (sshConfig?.hasIdentityFile) {
+      const resolved = await this.configParser.resolveHost(sshConfig.alias);
+      if (resolved) {
+        // The config parser already told us there's an identity file.
+        // Try common identity file locations from config
+        const configKeyPaths = [
+          path.join(os.homedir(), '.ssh', 'id_ed25519'),
+          path.join(os.homedir(), '.ssh', 'id_rsa'),
+        ];
+        for (const keyPath of configKeyPaths) {
+          try {
+            const keyData = await fs.promises.readFile(keyPath, 'utf8');
+            return { privateKey: keyData };
+          } catch {
+            // Try next
+          }
+        }
+      }
+    }
+
+    // Try SSH agent
+    const agentSocket = await this.discoverAgentSocket();
+    if (agentSocket) {
+      return { agent: agentSocket };
+    }
+
+    // Try default key files
+    const defaultKeys = [
+      path.join(os.homedir(), '.ssh', 'id_ed25519'),
+      path.join(os.homedir(), '.ssh', 'id_rsa'),
+      path.join(os.homedir(), '.ssh', 'id_ecdsa'),
+    ];
+
+    for (const keyPath of defaultKeys) {
+      try {
+        const keyData = await fs.promises.readFile(keyPath, 'utf8');
+        return { privateKey: keyData };
+      } catch {
+        // Try next
+      }
+    }
+
+    return {};
   }
 
   private async resolveRemoteProjectsPath(username: string): Promise<string> {

@@ -45,6 +45,7 @@ import {
   NotificationManager,
   ProjectScanner,
   SessionParser,
+  SshConnectionManager,
   SubagentResolver,
   UpdaterService,
 } from './services';
@@ -64,9 +65,7 @@ let dataCache: DataCache;
 let fileWatcher: FileWatcher;
 let notificationManager: NotificationManager;
 let updaterService: UpdaterService;
-let sshConnectionManager: InstanceType<
-  typeof import('./services/infrastructure/SshConnectionManager').SshConnectionManager
->;
+let sshConnectionManager: SshConnectionManager;
 let cleanupInterval: NodeJS.Timeout | null = null;
 
 /**
@@ -76,11 +75,7 @@ function initializeServices(): void {
   logger.info('Initializing services...');
 
   // Initialize SSH connection manager
-  const { SshConnectionManager: SshConnMgr } =
-    require('./services/infrastructure/SshConnectionManager') as {
-      SshConnectionManager: typeof import('./services/infrastructure/SshConnectionManager').SshConnectionManager;
-    };
-  sshConnectionManager = new SshConnMgr();
+  sshConnectionManager = new SshConnectionManager();
 
   // Initialize services (paths are set automatically from environment)
   projectScanner = new ProjectScanner();

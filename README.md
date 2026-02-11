@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="resources/icons/png/512x512.png" alt="claude-devtools" width="120" />
+  <img src="resources/icons/png/1024x1024.png" alt="claude-devtools" width="120" />
 </p>
 
 <h1 align="center">claude-devtools</h1>
@@ -8,14 +8,6 @@
   <strong>Stop guessing. See exactly what Claude is doing.</strong>
   <br />
   A desktop app that turns Claude Code's opaque session logs into a visual, searchable, actionable interface.
-</p>
-
-<p align="center">
-  <a href="https://github.com/matt1398/claude-devtools/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT" /></a>
-  <a href="#"><img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey.svg" alt="Platform" /></a>
-  <a href="#"><img src="https://img.shields.io/badge/electron-40-47848F.svg?logo=electron" alt="Electron" /></a>
-  <a href="#"><img src="https://img.shields.io/badge/react-18-61DAFB.svg?logo=react" alt="React" /></a>
-  <a href="#"><img src="https://img.shields.io/badge/typescript-5-3178C6.svg?logo=typescript" alt="TypeScript" /></a>
 </p>
 
 <br />

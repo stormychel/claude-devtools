@@ -29,6 +29,18 @@ export interface TriggerValidationResult {
  */
 export const DEFAULT_TRIGGERS: NotificationTrigger[] = [
   {
+    id: 'builtin-bash-command',
+    name: '.env File Access Alert',
+    enabled: true,
+    contentType: 'tool_use',
+    toolName: 'Any Tool',
+    mode: 'content_match',
+    matchField: 'command',
+    matchPattern: '/.env',
+    isBuiltin: true,
+    color: 'red',
+  },
+  {
     id: 'builtin-tool-result-error',
     name: 'Tool Result Error',
     enabled: true,
@@ -40,19 +52,7 @@ export const DEFAULT_TRIGGERS: NotificationTrigger[] = [
       '\\[Request interrupted by user for tool use\\]',
     ],
     isBuiltin: true,
-    color: 'red',
-  },
-  {
-    id: 'builtin-bash-command',
-    name: '.env File Access Alert',
-    enabled: true,
-    contentType: 'tool_use',
-    toolName: 'Bash',
-    mode: 'content_match',
-    matchField: 'command',
-    matchPattern: '/.env',
-    isBuiltin: true,
-    color: 'red',
+    color: 'orange',
   },
   {
     id: 'builtin-high-token-usage',
@@ -62,7 +62,7 @@ export const DEFAULT_TRIGGERS: NotificationTrigger[] = [
     mode: 'token_threshold',
     tokenThreshold: 8000,
     tokenType: 'total',
-    color: 'orange',
+    color: 'yellow',
     isBuiltin: true,
   },
 ];
