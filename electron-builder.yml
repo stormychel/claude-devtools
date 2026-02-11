@@ -21,6 +21,8 @@ mac:
     - zip
   hardenedRuntime: true
   gatekeeperAssess: false
+  notarize:
+    teamId: ${env.APPLE_TEAM_ID}
   icon: resources/icons/mac/icon.icns
 
 dmg:

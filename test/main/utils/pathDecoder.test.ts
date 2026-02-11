@@ -100,7 +100,7 @@ describe('pathDecoder', () => {
 
     it('should prefer cwdHint over lossy decode for dashed project names', () => {
       // Without cwdHint, dashes are decoded as slashes (lossy)
-      expect(extractProjectName('-Users-name-claude-devtools')).toBe('context');
+      expect(extractProjectName('-Users-name-claude-devtools')).toBe('devtools');
       // With cwdHint, the actual project name is preserved
       expect(
         extractProjectName('-Users-name-claude-devtools', '/Users/name/claude-devtools')
@@ -108,7 +108,7 @@ describe('pathDecoder', () => {
     });
 
     it('should fall back to decoded name when cwdHint is undefined', () => {
-      expect(extractProjectName('-Users-username-projectname', undefined)).toBe('projectname');
+      expect(extractProjectName('-Users-username-projectname')).toBe('projectname');
     });
   });
 
