@@ -50,6 +50,7 @@ export function registerSessionRoutes(app: FastifyInstance, services: HttpServic
       limit?: string;
       includeTotalCount?: string;
       prefilterAll?: string;
+      metadataLevel?: 'light' | 'deep';
     };
   }>('/api/projects/:projectId/sessions-paginated', async (request) => {
     try {
@@ -67,6 +68,7 @@ export function registerSessionRoutes(app: FastifyInstance, services: HttpServic
       const options: SessionsPaginationOptions = {
         includeTotalCount: request.query.includeTotalCount !== 'false',
         prefilterAll: request.query.prefilterAll !== 'false',
+        metadataLevel: request.query.metadataLevel,
       };
 
       const result = await services.projectScanner.listSessionsPaginated(

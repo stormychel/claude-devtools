@@ -190,6 +190,7 @@ export class HttpAPIClient implements ElectronAPI {
     if (limit) params.set('limit', String(limit));
     if (options?.includeTotalCount === false) params.set('includeTotalCount', 'false');
     if (options?.prefilterAll === false) params.set('prefilterAll', 'false');
+    if (options?.metadataLevel) params.set('metadataLevel', options.metadataLevel);
     const qs = params.toString();
     const encodedId = encodeURIComponent(projectId);
     const path = `/api/projects/${encodedId}/sessions-paginated`;

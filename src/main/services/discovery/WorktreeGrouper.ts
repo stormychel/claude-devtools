@@ -71,7 +71,9 @@ export class WorktreeGrouper {
 
     // 2. Filter sessions for each project to only include non-noise sessions
     const projectFilteredSessions = new Map<string, string[]>();
-    const shouldFilterNoise = this.fsProvider.type !== 'ssh';
+    // Fast-first default for both local and SSH: avoid full-file scans during dashboard load.
+    // Can be re-enabled for strict parity debugging.
+    const shouldFilterNoise = process.env.CLAUDE_DEVTOOLS_STRICT_SESSION_FILTER === '1';
     await Promise.all(
       projects.map(async (project) => {
         const baseDir = extractBaseDir(project.id);

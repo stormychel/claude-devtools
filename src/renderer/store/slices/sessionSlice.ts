@@ -95,9 +95,11 @@ export const createSessionSlice: StateCreator<AppState, [], [], SessionSlice> = 
       sessionsTotalCount: 0,
     });
     try {
+      const { connectionMode } = get();
       const result = await api.getSessionsPaginated(projectId, null, 20, {
         includeTotalCount: false,
         prefilterAll: false,
+        metadataLevel: connectionMode === 'ssh' ? 'light' : 'deep',
       });
       set({
         sessions: result.sessions,
@@ -129,9 +131,11 @@ export const createSessionSlice: StateCreator<AppState, [], [], SessionSlice> = 
 
     set({ sessionsLoadingMore: true });
     try {
+      const { connectionMode } = get();
       const result = await api.getSessionsPaginated(selectedProjectId, sessionsCursor, 20, {
         includeTotalCount: false,
         prefilterAll: false,
+        metadataLevel: connectionMode === 'ssh' ? 'light' : 'deep',
       });
       set((prevState) => {
         // Deduplicate: pinned sessions fetched earlier may appear in paginated results
@@ -209,9 +213,11 @@ export const createSessionSlice: StateCreator<AppState, [], [], SessionSlice> = 
     projectRefreshGeneration.set(projectId, generation);
 
     try {
+      const { connectionMode } = get();
       const result = await api.getSessionsPaginated(projectId, null, 20, {
         includeTotalCount: false,
         prefilterAll: false,
+        metadataLevel: connectionMode === 'ssh' ? 'light' : 'deep',
       });
 
       // Drop stale responses from older in-flight refreshes

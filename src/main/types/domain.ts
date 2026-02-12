@@ -284,4 +284,11 @@ export interface SessionsPaginationOptions {
    * @default true
    */
   prefilterAll?: boolean;
+  /**
+   * Metadata depth to return for listed sessions.
+   * - light: filesystem metadata only (fast)
+   * - deep: includes parsed session content summary fields (slower)
+   * @default 'deep'
+   */
+  metadataLevel?: SessionMetadataLevel;
 }

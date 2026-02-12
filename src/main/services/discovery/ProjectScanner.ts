@@ -116,7 +116,11 @@ export class ProjectScanner {
       );
 
       // Process each project directory (may return multiple projects per dir)
-      const projectArrays = await Promise.all(projectDirs.map((dir) => this.scanProject(dir.name)));
+      const projectArrays = await this.collectFulfilledInBatches(
+        projectDirs,
+        this.fsProvider.type === 'ssh' ? 8 : 24,
+        async (dir) => this.scanProject(dir.name)
+      );
 
       // Flatten and sort by most recent
       const validProjects = projectArrays.flat();
@@ -381,6 +385,7 @@ export class ProjectScanner {
       const projectPath = path.join(this.projectsDir, baseDir);
       const sessionFilter = subprojectRegistry.getSessionFilter(projectId);
       const shouldFilterNoise = this.fsProvider.type !== 'ssh';
+      const metadataLevel: SessionMetadataLevel = this.fsProvider.type === 'ssh' ? 'light' : 'deep';
 
       if (!(await this.fsProvider.exists(projectPath))) {
         return [];
@@ -411,28 +416,14 @@ export class ProjectScanner {
             }
           }
 
-          try {
-            return await this.buildSessionMetadata(
-              projectId,
-              sessionId,
-              filePath,
-              decodedPath,
-              prefetchedMtimeMs
-            );
-          } catch (error) {
-            if (this.fsProvider.type !== 'ssh') {
-              throw error;
-            }
-
-            logger.debug(`SSH metadata parse failed for ${sessionId}, using light fallback`, error);
-            return this.buildLightSessionMetadata(
-              projectId,
-              sessionId,
-              filePath,
-              decodedPath,
-              prefetchedMtimeMs
-            );
-          }
+          return this.buildSessionForListing(
+            metadataLevel,
+            projectId,
+            sessionId,
+            filePath,
+            decodedPath,
+            prefetchedMtimeMs
+          );
         })
       );
 
@@ -472,6 +463,8 @@ export class ProjectScanner {
       const projectPath = path.join(this.projectsDir, baseDir);
       const sessionFilter = subprojectRegistry.getSessionFilter(projectId);
       const shouldFilterNoise = this.fsProvider.type !== 'ssh';
+      const metadataLevel: SessionMetadataLevel =
+        options?.metadataLevel ?? (this.fsProvider.type === 'ssh' ? 'light' : 'deep');
 
       if (!(await this.fsProvider.exists(projectPath))) {
         return { sessions: [], nextCursor: null, hasMore: false, totalCount: 0 };
@@ -524,7 +517,7 @@ export class ProjectScanner {
       // This is slower but provides exact totalCount.
       let validSessionIds: Set<string> | null = null;
       let totalCount = 0;
-      if (prefilterAll && shouldFilterNoise) {
+      if (prefilterAll && shouldFilterNoise && metadataLevel === 'deep') {
         const contentResults = await Promise.allSettled(
           fileInfos.map(async (fileInfo) => ({
             sessionId: fileInfo.sessionId,
@@ -613,34 +606,16 @@ export class ProjectScanner {
         const toBuild = withContent.slice(0, needed);
 
         const builtSessions = await Promise.all(
-          toBuild.map(async ({ fileInfo }) => {
-            try {
-              return await this.buildSessionMetadata(
-                projectId,
-                fileInfo.sessionId,
-                fileInfo.filePath,
-                decodedPath,
-                fileInfo.mtimeMs
-              );
-            } catch (error) {
-              // In SSH mode, never drop a visible session row due to transient deep-parse failures.
-              if (this.fsProvider.type !== 'ssh') {
-                throw error;
-              }
-
-              logger.debug(
-                `SSH page metadata parse failed for ${fileInfo.sessionId}, using light fallback`,
-                error
-              );
-              return this.buildLightSessionMetadata(
-                projectId,
-                fileInfo.sessionId,
-                fileInfo.filePath,
-                decodedPath,
-                fileInfo.mtimeMs
-              );
-            }
-          })
+          toBuild.map(({ fileInfo }) =>
+            this.buildSessionForListing(
+              metadataLevel,
+              projectId,
+              fileInfo.sessionId,
+              fileInfo.filePath,
+              decodedPath,
+              fileInfo.mtimeMs
+            )
+          )
         );
         sessions.push(...builtSessions);
 
@@ -701,8 +676,7 @@ export class ProjectScanner {
     projectPath: string,
     prefetchedMtimeMs?: number
   ): Promise<Session> {
-    const usePrefetchedTimes =
-      this.fsProvider.type === 'ssh' && typeof prefetchedMtimeMs === 'number';
+    const usePrefetchedTimes = typeof prefetchedMtimeMs === 'number';
     const stats = usePrefetchedTimes ? null : await this.fsProvider.stat(filePath);
     const effectiveMtime = prefetchedMtimeMs ?? stats?.mtimeMs ?? Date.now();
     const birthtimeMs = stats?.birthtimeMs ?? effectiveMtime;
@@ -764,6 +738,53 @@ export class ProjectScanner {
       messageCount: 0,
       metadataLevel,
     };
+  }
+
+  /**
+   * Build session metadata according to requested listing depth.
+   * In SSH mode, deep parse failures degrade gracefully to light metadata.
+   */
+  private async buildSessionForListing(
+    metadataLevel: SessionMetadataLevel,
+    projectId: string,
+    sessionId: string,
+    filePath: string,
+    projectPath: string,
+    prefetchedMtimeMs?: number
+  ): Promise<Session> {
+    if (metadataLevel === 'light') {
+      return this.buildLightSessionMetadata(
+        projectId,
+        sessionId,
+        filePath,
+        projectPath,
+        prefetchedMtimeMs
+      );
+    }
+
+    try {
+      return await this.buildSessionMetadata(
+        projectId,
+        sessionId,
+        filePath,
+        projectPath,
+        prefetchedMtimeMs
+      );
+    } catch (error) {
+      // In SSH mode, never drop a visible session row due to transient deep-parse failures.
+      if (this.fsProvider.type !== 'ssh') {
+        throw error;
+      }
+
+      logger.debug(`SSH metadata parse failed for ${sessionId}, using light fallback`, error);
+      return this.buildLightSessionMetadata(
+        projectId,
+        sessionId,
+        filePath,
+        projectPath,
+        prefetchedMtimeMs
+      );
+    }
   }
 
   /**
