@@ -11,6 +11,8 @@
  * - LocalFileSystemProvider: Local fs implementation
  * - SshFileSystemProvider: SSH/SFTP implementation
  * - SshConnectionManager: SSH connection lifecycle
+ * - ServiceContext: Service bundle for a single workspace context
+ * - ServiceContextRegistry: Registry coordinator for all contexts
  */
 
 export * from './ConfigManager';
@@ -19,6 +21,8 @@ export type * from './FileSystemProvider';
 export * from './FileWatcher';
 export * from './LocalFileSystemProvider';
 export * from './NotificationManager';
+export * from './ServiceContext';
+export * from './ServiceContextRegistry';
 export * from './SshConfigParser';
 export * from './SshConnectionManager';
 export * from './SshFileSystemProvider';
