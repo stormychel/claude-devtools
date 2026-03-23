@@ -13,6 +13,17 @@ import type { FileSystemProvider } from '../services/infrastructure/FileSystemPr
 
 const logger = createLogger('Util:metadataExtraction');
 
+/**
+ * Normalize Windows drive letter to uppercase for consistent path comparison.
+ * CLI uses uppercase (C:\...) while VS Code extension uses lowercase (c:\...).
+ */
+function normalizeDriveLetter(p: string): string {
+  if (p.length >= 2 && p[1] === ':') {
+    return p[0].toUpperCase() + p.slice(1);
+  }
+  return p;
+}
+
 const defaultProvider = new LocalFileSystemProvider();
 
 interface MessagePreview {
@@ -48,7 +59,7 @@ export async function extractCwd(
       if ('cwd' in entry && entry.cwd) {
         rl.close();
         fileStream.destroy();
-        return entry.cwd;
+        return normalizeDriveLetter(entry.cwd);
       }
     }
   } catch (error) {
