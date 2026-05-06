@@ -54,13 +54,11 @@ describe('ProjectScanner updatedAt logic', () => {
     fs.utimesSync(filePath, new Date(nowMs), new Date(nowMs));
 
     const scanner = new ProjectScanner(projectsDir);
-    const projects = await scanner.scan();
-    const project = projects.find((p) => p.id === encodedName);
+    const sessions = await scanner.listSessions(encodedName);
     
-    expect(project).toBeDefined();
-    expect(project?.sessions).toHaveLength(1);
+    expect(sessions).toHaveLength(1);
     
-    const session = project!.sessions[0];
+    const session = sessions[0];
     
     // createdAt should strictly use the old message timestamp
     expect(session.createdAt).toBe(Math.floor(oldDateMs));
