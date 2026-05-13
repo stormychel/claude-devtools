@@ -16,6 +16,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 
+import { api } from '@renderer/api';
 import { markdownComponents } from '@renderer/components/chat/markdownComponents';
 import { useStore } from '@renderer/store';
 import { Check, Copy } from 'lucide-react';
@@ -182,56 +183,90 @@ export const MemoryView = ({ projectId }: MemoryViewProps): React.JSX.Element =>
     [content, body]
   );
 
-  const handleWikilinkClick = useCallback(
-    (rawHref: string, e: React.MouseEvent<HTMLAnchorElement>): boolean => {
-      if (!rawHref.startsWith(WIKILINK_PROTOCOL)) return false;
-      const slug = decodeURIComponent(rawHref.slice(WIKILINK_PROTOCOL.length));
-      const target = resolveWikilink(slug, rows);
-      e.preventDefault();
-      if (target) {
-        setSelectedFile(target);
+  /**
+   * Resolve any href that points at another memory layer:
+   *   - `memory:slug`              — preprocessed wikilinks
+   *   - `working-style.md`         — relative markdown link to a sibling file
+   *   - `./working-style.md`       — same, with leading dot
+   * Returns null for anything else (external URLs, anchors, etc.).
+   */
+  const resolveLayerHref = useCallback(
+    (href: string | undefined): string | null => {
+      if (!href) return null;
+      if (href.startsWith(WIKILINK_PROTOCOL)) {
+        return resolveWikilink(decodeURIComponent(href.slice(WIKILINK_PROTOCOL.length)), rows);
       }
-      return true;
+      // Bail on any scheme (http:, mailto:, etc.) and any path with a slash —
+      // memory layers live in a single flat directory.
+      if (/^[a-z]+:/i.test(href)) return null;
+      if (href.startsWith('#')) return null;
+      const trimmed = href.replace(/^\.\//, '');
+      if (trimmed.includes('/') || trimmed.includes('\\')) return null;
+      if (!trimmed.toLowerCase().endsWith('.md')) return null;
+      return resolveWikilink(trimmed.replace(/\.md$/i, ''), rows);
     },
     [rows]
   );
 
-  // Local markdown components: override the anchor renderer so wikilinks
-  // navigate inside the pane instead of opening external URLs.
+  // Local markdown components: override the anchor renderer so both
+  // `[[wikilinks]]` and plain `[label](sibling.md)` links navigate inside the
+  // pane. Without this, Electron treats the relative `.md` href as a normal
+  // navigation and reloads the window (which the user sees as "going home").
   const components = useMemo<Components>(
     () => ({
       ...markdownComponents,
       a: ({ href, children, ...rest }) => {
-        const isWikilink = typeof href === 'string' && href.startsWith(WIKILINK_PROTOCOL);
-        const unresolved =
-          isWikilink &&
-          resolveWikilink(decodeURIComponent(href.slice(WIKILINK_PROTOCOL.length)), rows) === null;
-        if (isWikilink) {
+        const target = resolveLayerHref(typeof href === 'string' ? href : undefined);
+        const isLayerLink =
+          typeof href === 'string' &&
+          (href.startsWith(WIKILINK_PROTOCOL) ||
+            (/\.md(?:#.*)?$/i.test(href) && !/^[a-z]+:/i.test(href)));
+
+        if (isLayerLink) {
+          const resolved = target !== null;
           return (
             <a
               {...rest}
               href={href}
               onClick={(e): void => {
-                handleWikilinkClick(href, e);
+                e.preventDefault();
+                e.stopPropagation();
+                if (target) setSelectedFile(target);
               }}
-              className="cursor-pointer underline decoration-dotted underline-offset-2"
+              className="cursor-pointer underline decoration-solid underline-offset-2 hover:opacity-80"
               style={{
-                color: unresolved ? 'var(--color-text-muted)' : 'var(--prose-link)',
+                color: resolved ? 'var(--prose-link)' : 'var(--color-text-muted)',
+                fontWeight: 500,
               }}
-              title={unresolved ? 'No matching memory layer' : undefined}
+              title={resolved ? `Open ${target}` : 'No matching memory layer'}
             >
               {children}
             </a>
           );
         }
+
+        // External link: open in the system browser via the same bridge the
+        // rest of the app uses, and never let the renderer navigate itself.
         return (
-          <a {...rest} href={href}>
+          <a
+            {...rest}
+            href={href}
+            onClick={(e): void => {
+              if (typeof href !== 'string') return;
+              e.preventDefault();
+              void api.openExternal(href);
+            }}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="underline decoration-dotted underline-offset-2"
+            style={{ color: 'var(--prose-link)' }}
+          >
             {children}
           </a>
         );
       },
     }),
-    [rows, handleWikilinkClick]
+    [resolveLayerHref]
   );
 
   const handleCopy = useCallback(async (): Promise<void> => {
@@ -355,7 +390,16 @@ export const MemoryView = ({ projectId }: MemoryViewProps): React.JSX.Element =>
             <div className="max-w-3xl">
               {frontmatter && <FrontmatterCard frontmatter={frontmatter} />}
               <div className="prose-sm" style={{ color: 'var(--prose-body)' }}>
-                <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={components}
+                  // react-markdown's default urlTransform strips any URL whose
+                  // scheme isn't on a small allowlist (http/https/mailto/tel/
+                  // irc/ircs/relative). Our `memory:` wikilink scheme would
+                  // otherwise be silently rewritten to "", which the anchor
+                  // override can't resolve.
+                  urlTransform={(url): string => url}
+                >
                   {rendered}
                 </ReactMarkdown>
               </div>
